@@ -1,39 +1,25 @@
-# Use an alpine Node.js runtime as a parent image
- FROM node:20-alpine
+FROM node:20-alpine
 
-# Set the working directory in the container for the client
-WORKDIR /usr/src/app/client
+WORKDIR /app
 
-# Copy the client package.json and package-lock.json
-COPY client/package*.json ./
+# Copy package files first (better caching)
+COPY server/package*.json ./server/
+COPY client/package*.json ./client/
 
-# Install the client dependencies
-RUN npm install
+# Install all dependencies (picks up mysql2 automatically)
+RUN npm install --prefix server && npm install --prefix client
 
-# Copy the client source code
-COPY client/ ./
+# Copy all project files
+COPY . .
 
-# Build the client application
-RUN npm run build
+# Build the React client
+RUN npm run build --prefix client
 
-# Set the working directory in the container for the server
-WORKDIR /usr/src/app/server
+# Copy React build into server public folder
+RUN mkdir -p server/public && cp -r client/dist/* server/public/
 
-# Copy the server package.json and package-lock.json
-COPY server/package*.json ./
-
-# Install the server dependencies
-RUN npm install
-
-# Copy the server source code
-COPY server/ ./
-
-# Copy the client build files to the server's public directory
-RUN mkdir -p ./public && cp -R /usr/src/app/client/dist/* ./public/
-
-# Expose the port the server will run on
+# Open port 5000
 EXPOSE 5000
 
-# Command to run the server
-CMD ["npm", "start"]
-
+# Start the server
+CMD ["npm", "start", "--prefix", "server"]

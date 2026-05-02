@@ -1,22 +1,22 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const mysql = require('mysql');
+const mysql = require('mysql2'); //✅ Developer changed mysql → mysql2, package.json
 const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const port = process.env.PORT || 5000; // Use an environment variable for the port
+const port = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
-// Database connection
+// Database connection using environment variables from docker-compose
 const db = mysql.createConnection({
-  host: process.env.DB_HOST || 'mysql', // Use 'mysql' to connect to MySQL container
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || 'password',
-  database: process.env.DB_NAME || 'test_db',
+  host: process.env.DB_HOST || 'mysql',         // comes from docker-compose
+  user: process.env.DB_USER || 'appuser',       // comes from docker-compose
+  password: process.env.DB_PASSWORD || 'apppass', // comes from docker-compose
+  database: process.env.DB_NAME || 'test_db',   // comes from docker-compose
 });
 
 db.connect((err) => {
@@ -26,7 +26,7 @@ db.connect((err) => {
   }
   console.log('Database connected.');
 
-  // Initialize database with `users` table if it doesn't exist
+  // Create users table if not exists
   const createUsersTable = `
     CREATE TABLE IF NOT EXISTS users (
       id INT AUTO_INCREMENT PRIMARY KEY,
@@ -36,66 +36,68 @@ db.connect((err) => {
     )
   `;
 
-  db.query(createUsersTable, (err, results) => {
+  db.query(createUsersTable, (err) => {
     if (err) {
       console.error('Failed to create users table:', err.stack);
       process.exit(1);
     }
-    console.log('Users table initialized or already exists.');
+    console.log('Users table ready.');
   });
 });
 
-// API Routes
+// Get all users
 app.get('/api/users', (req, res) => {
   db.query('SELECT * FROM users', (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
+    if (err) return res.status(500).json({ error: err.message });
     res.json(results);
   });
 });
 
+// Add a user
 app.post('/api/users', (req, res) => {
   const { name, email, role } = req.body;
-  db.query('INSERT INTO users (name, email, role) VALUES (?, ?, ?)', [name, email, role], (err, results) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
+  db.query(
+    'INSERT INTO users (name, email, role) VALUES (?, ?, ?)',
+    [name, email, role],
+    (err, results) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.status(201).json({ id: results.insertId, name, email, role });
     }
-    res.status(201).json({ id: results.insertId, name, email, role });
-  });
+  );
 });
 
+// Update a user
 app.put('/api/users/:id', (req, res) => {
   const { id } = req.params;
   const { name, email, role } = req.body;
-  db.query('UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?', [name, email, role, id], (err) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
+  db.query(
+    'UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?',
+    [name, email, role, id],
+    (err) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.status(200).json({ id, name, email, role });
     }
-    res.status(200).json({ id, name, email, role });
-  });
+  );
 });
 
+// Delete a user
 app.delete('/api/users/:id', (req, res) => {
   const { id } = req.params;
   db.query('DELETE FROM users WHERE id = ?', [id], (err) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
+    if (err) return res.status(500).json({ error: err.message });
     res.status(200).json({ message: 'User deleted successfully' });
   });
 });
 
-// Serve static files from the client/public directory
-app.use(express.static(path.join(__dirname, '../client/public')));
+// Serve React frontend (dist folder copied here by Dockerfile)
+app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve index.html for all other routes
+// All unknown routes go to React app
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // Start server
 app.listen(port, () => {
-  console.log(`Server is running on http://localhost:${port}`);
+  console.log(`Server running on http://localhost:${port}`);
 });
-
